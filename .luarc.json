@@ -6,7 +6,8 @@
     "pathStrict": true
   },
   "workspace": {
-    "checkThirdParty": false
+    "checkThirdParty": false,
+    "library": ["${env:VIMRUNTIME}/lua"]
   },
   "diagnostics": {
     "globals": ["vim"]
