@@ -35,19 +35,19 @@ the module available immediately during startup: >lua
       load = true,
     })
 
-    local use = require("lack")
+    local lack = require("lack")
 <
 ===============================================================================
 USAGE                                                          *lack-usage*
 
 The module is a callable table: >lua
 
-    use(specs, opts)
-    use.setup(opts)
+    lack(specs, opts)
+    lack.setup(opts)
 <
 Declare plugins and configure them with ordinary Lua: >lua
 
-    use({
+    lack({
       {
         "nvim-telescope/telescope.nvim",
         dependencies = {
@@ -58,7 +58,7 @@ Declare plugins and configure them with ordinary Lua: >lua
 
     require("telescope").setup({})
 <
-Each use() invocation calls `vim.pack.add(resolved_plugins, opts)` exactly once.
+Each lack() invocation calls `vim.pack.add(resolved_plugins, opts)` exactly once.
 Native installation, loading, updates, removal, and lockfile behavior are not
 changed.
 
@@ -68,7 +68,7 @@ SETUP                                                         *lack.setup()*
 The default source prefix is `https://github.com/`. Set another prefix before
 declaring plugins: >lua
 
-    use.setup({
+    lack.setup({
       repository = "https://gitlab.com/",
     })
 <
@@ -81,20 +81,28 @@ GLOBAL                                                          *lack-global*
 `setup()` accepts a `global` option that exposes the callable module without
 an explicit require(): >lua
 
-    use.setup({
+    lack.setup({
       global = true,
     })
 
-    use({ "owner/plugin" })
+    lack({ "owner/plugin" })
 <
 `global` accepts a boolean, a string, or nil:
 
-    true      registers the module as `use`.
+    true      registers the module as `lack`, matching the plugin name.
     "name"    registers the module under that name instead. It must be a
               valid Lua identifier.
     false     disables the alias.
     nil       disables the alias. This is also the default.
 
+To use a different name, such as `use`, pass it as a string: >lua
+
+    require("lack").setup({
+      global = "use",
+    })
+
+    use({ "owner/plugin" })
+<
 Setup fails, leaving the previous alias and repository unchanged, if the
 requested name is already defined by something other than lack.nvim, even
 if that value is `false`.
@@ -117,7 +125,7 @@ unchanged. Every other source is prefixed with the configured repository.
 Native fields such as `name`, `version`, and `data` are forwarded unchanged.
 Call options are passed directly as the second argument to |vim.pack.add()|: >lua
 
-    use({
+    lack({
       {
         "owner/plugin",
         version = "v1.2.3",
@@ -134,7 +142,7 @@ DEPENDENCIES                                             *lack-dependencies*
 
 Specifications may contain recursive `dependencies` lists: >lua
 
-    use({
+    lack({
       {
         "NeogitOrg/neogit",
         dependencies = {

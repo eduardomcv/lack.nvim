@@ -39,7 +39,7 @@ local function resolve_global(value)
 	end
 
 	if value == true then
-		return "use"
+		return "lack"
 	end
 
 	if type(value) ~= "string" then

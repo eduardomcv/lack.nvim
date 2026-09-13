@@ -400,21 +400,21 @@ test("rejects a non-string configured repository", function()
 end)
 
 test("registers, renames, and disables the global alias", function()
-	with_globals({ "use", "plug" }, function()
+	with_globals({ "lack", "use" }, function()
 		lack.setup({ global = true })
+		equal(lack, rawget(_G, "lack"))
+
+		lack.setup({ global = "use" })
+		equal(nil, rawget(_G, "lack"))
 		equal(lack, rawget(_G, "use"))
 
-		lack.setup({ global = "plug" })
-		equal(nil, rawget(_G, "use"))
-		equal(lack, rawget(_G, "plug"))
-
 		lack.setup({})
-		equal(nil, rawget(_G, "plug"))
+		equal(nil, rawget(_G, "use"))
 	end)
 end)
 
 test("forwards calls through the global alias", function()
-	with_globals({ "use" }, function()
+	with_globals({ "lack" }, function()
 		lack.setup({ global = true })
 
 		local opts = { confirm = false }
@@ -427,7 +427,7 @@ test("forwards calls through the global alias", function()
 			return "global-result"
 		end
 
-		local result = rawget(_G, "use")({ "owner/plugin" }, opts)
+		local result = rawget(_G, "lack")({ "owner/plugin" }, opts)
 
 		equal("global-result", result)
 		equal(1, call.count)
@@ -437,41 +437,41 @@ test("forwards calls through the global alias", function()
 end)
 
 test("disables only an alias still owned by lack", function()
-	with_globals({ "use" }, function()
+	with_globals({ "lack" }, function()
 		lack.setup({ global = true })
-		equal(lack, rawget(_G, "use"))
+		equal(lack, rawget(_G, "lack"))
 
 		local replacement = {}
-		rawset(_G, "use", replacement)
+		rawset(_G, "lack", replacement)
 		lack.setup({ global = false })
 
-		equal(replacement, rawget(_G, "use"))
+		equal(replacement, rawget(_G, "lack"))
 	end)
 end)
 
 test("re-registering the same owned global succeeds silently", function()
-	with_globals({ "use" }, function()
+	with_globals({ "lack" }, function()
 		lack.setup({ global = true })
-		equal(lack, rawget(_G, "use"))
+		equal(lack, rawget(_G, "lack"))
 
 		lack.setup({ global = true })
-		equal(lack, rawget(_G, "use"))
+		equal(lack, rawget(_G, "lack"))
 	end)
 end)
 
 test("rejects re-registering an owned global after it is hijacked", function()
-	with_globals({ "use" }, function()
+	with_globals({ "lack" }, function()
 		lack.setup({ global = true })
-		equal(lack, rawget(_G, "use"))
+		equal(lack, rawget(_G, "lack"))
 
 		local hijacker = {}
-		rawset(_G, "use", hijacker)
+		rawset(_G, "lack", hijacker)
 
-		expect_error("global use is already defined", function()
+		expect_error("global lack is already defined", function()
 			lack.setup({ global = true })
 		end)
 
-		equal(hijacker, rawget(_G, "use"))
+		equal(hijacker, rawget(_G, "lack"))
 	end)
 end)
 

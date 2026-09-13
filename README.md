@@ -24,13 +24,13 @@ vim.pack.add({ "https://github.com/eduardomcv/lack.nvim" }, {
   load = true,
 })
 
-local use = require("lack")
+local lack = require("lack")
 ```
 
 ## Usage
 
 ```lua
-use({
+lack({
   {
     "nvim-telescope/telescope.nvim",
     dependencies = {
@@ -51,7 +51,7 @@ Strings, positional tables, and `src` fields use the same source-resolution
 path:
 
 ```lua
-use({
+lack({
   "owner/string-plugin",
   { "owner/positional-plugin" },
   { src = "owner/src-plugin" },
@@ -62,7 +62,7 @@ use({
 Native fields such as `name`, `version`, and `data` are forwarded unchanged:
 
 ```lua
-use({
+lack({
   {
     "owner/plugin",
     name = "plugin",
@@ -83,7 +83,7 @@ Bare sources are prefixed with `https://github.com/` by default. Sources using
 `scheme://` or SCP-style `user@host:path` syntax pass through unchanged:
 
 ```lua
-use({
+lack({
   "owner/github-plugin",
   "https://example.com/owner/https-plugin",
   "ssh://git@example.com/owner/ssh-plugin",
@@ -112,15 +112,25 @@ require("lack").setup({
   global = true,
 })
 
-use({ "owner/plugin" })
+lack({ "owner/plugin" })
 ```
 
 `global` accepts a boolean, a string, or `nil`:
 
-- `true` registers the module as `use`.
+- `true` registers the module as `lack`, matching the plugin name.
 - A string registers the module under that name instead. It must be a valid
   Lua identifier.
 - `false`, `nil`, or omitting `global` disables the alias.
+
+To use a different name, such as `use`, pass it as a string:
+
+```lua
+require("lack").setup({
+  global = "use",
+})
+
+use({ "owner/plugin" })
+```
 
 Setup fails, leaving the previous alias and repository unchanged, if the
 requested name is already defined by something other than lack.nvim, even if
@@ -132,7 +142,7 @@ Renaming or disabling the alias only clears it if lack.nvim still owns it.
 Dependencies may be nested to any depth:
 
 ```lua
-use({
+lack({
   {
     "NeogitOrg/neogit",
     dependencies = {
@@ -160,7 +170,7 @@ Resolved source or version conflicts produce a `lack:` error. Native version
 normalization is order-sensitive: an explicit version followed by an omitted
 version is a conflict.
 
-Each `use()` invocation results in exactly one call:
+Each `lack()` invocation results in exactly one call:
 
 ```lua
 vim.pack.add(resolved_plugins, opts)
