@@ -207,6 +207,24 @@ test("retains independent declaration order", function()
 	}, sources(call.packages))
 end)
 
+test("retains stable order when dependencies constrain declarations", function()
+	local call = invoke({
+		{
+			"owner/first",
+			dependencies = { "owner/dependency" },
+		},
+		"owner/second",
+		"owner/third",
+	})
+
+	equal({
+		"https://github.com/owner/dependency",
+		"https://github.com/owner/first",
+		"https://github.com/owner/second",
+		"https://github.com/owner/third",
+	}, sources(call.packages))
+end)
+
 test("fills a missing canonical version from a duplicate", function()
 	local call = invoke({
 		{
@@ -229,13 +247,35 @@ test("fills a missing canonical version from a duplicate", function()
 	}, call.packages)
 end)
 
+test("deduplicates explicit names by their native final component", function()
+	local call = invoke({
+		{
+			"owner/plugin",
+			name = "scope/plugin",
+			dependencies = { "owner/first-dependency" },
+		},
+		{
+			"owner/plugin",
+			name = "plugin",
+			dependencies = { "owner/second-dependency" },
+		},
+	})
+
+	equal({
+		"https://github.com/owner/first-dependency",
+		"https://github.com/owner/second-dependency",
+		"https://github.com/owner/plugin",
+	}, sources(call.packages))
+	equal("scope/plugin", call.packages[3].name)
+end)
+
 test("rejects duplicate identities with conflicting sources", function()
 	local called = false
 	vim.pack.add = function()
 		called = true
 	end
 
-	expect_error("lack:", function()
+	expect_error("conflicting sources", function()
 		lack({
 			{ "owner/first", name = "plugin" },
 			{ "owner/second", name = "plugin" },
@@ -250,13 +290,22 @@ test("rejects duplicate identities with conflicting versions", function()
 		called = true
 	end
 
-	expect_error("lack:", function()
+	expect_error("conflicting versions", function()
 		lack({
 			{ "owner/plugin", version = "v1.0.0" },
 			{ "owner/plugin", version = "v2.0.0" },
 		})
 	end)
 	equal(false, called)
+end)
+
+test("preserves native version conflict ordering", function()
+	expect_error("conflicting versions", function()
+		lack({
+			{ "owner/plugin", version = "v1.0.0" },
+			"owner/plugin",
+		})
+	end)
 end)
 
 test("reports dependency cycles before calling vim.pack.add", function()
@@ -322,6 +371,12 @@ end
 test("rejects an empty configured repository", function()
 	expect_error("lack:", function()
 		lack.setup({ repository = "" })
+	end)
+end)
+
+test("rejects a non-string configured repository", function()
+	expect_error("repository must be a non-empty string", function()
+		lack.setup({ repository = false })
 	end)
 end)
 

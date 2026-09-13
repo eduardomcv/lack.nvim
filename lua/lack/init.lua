@@ -48,14 +48,9 @@ local function normalize_spec(spec)
 end
 
 local function plugin_name(package)
-	if package.name ~= nil then
-		return package.name
-	end
+	local name = package.name or package.src:gsub("%.git$", "")
 
-	local source = package.src:gsub("/+$", "")
-	local name = source:match("([^/]+)$") or source
-
-	return name:gsub("%.git$", "")
+	return (type(name) == "string" and name or ""):match("[^/]+$") or ""
 end
 
 local function fail_cycle(stack, start, repeated)
