@@ -44,7 +44,165 @@ local function normalize_spec(spec)
 
 	package.src = resolve_source(source)
 
-	return package
+	return package, spec.dependencies or {}
+end
+
+local function plugin_name(package)
+	if package.name ~= nil then
+		return package.name
+	end
+
+	local source = package.src:gsub("/+$", "")
+	local name = source:match("([^/]+)$") or source
+
+	return name:gsub("%.git$", "")
+end
+
+local function fail_cycle(stack, start, repeated)
+	local cycle = {}
+
+	for index = start, #stack do
+		table.insert(cycle, stack[index].package.src)
+	end
+
+	table.insert(cycle, repeated.package.src)
+	fail("dependency cycle: " .. table.concat(cycle, " -> "))
+end
+
+local function assert_acyclic(groups)
+	local state = {}
+	local stack = {}
+	local positions = {}
+
+	local function visit(group)
+		state[group] = 1
+		positions[group] = #stack + 1
+		table.insert(stack, group)
+
+		for _, dependency in ipairs(group.dependencies) do
+			if state[dependency] == 1 then
+				fail_cycle(stack, positions[dependency], dependency)
+			elseif state[dependency] == nil then
+				visit(dependency)
+			end
+		end
+
+		state[group] = 2
+		positions[group] = nil
+		table.remove(stack)
+	end
+
+	for _, group in ipairs(groups) do
+		if state[group] == nil then
+			visit(group)
+		end
+	end
+end
+
+local function collect_specs(specs)
+	local groups = {}
+	local groups_by_name = {}
+	local visiting = {}
+	local stack = {}
+
+	local function register(package)
+		local name = plugin_name(package)
+		local group = groups_by_name[name]
+
+		if group == nil then
+			group = {
+				package = package,
+				dependencies = {},
+				dependency_set = {},
+				dependents = {},
+			}
+			groups_by_name[name] = group
+			table.insert(groups, group)
+			return group
+		end
+
+		if group.package.src ~= package.src then
+			fail(("conflicting sources for %s: %s and %s"):format(tostring(name), group.package.src, package.src))
+		end
+
+		if group.package.version == nil then
+			group.package.version = package.version
+		elseif group.package.version ~= package.version then
+			fail(("conflicting versions for %s"):format(tostring(name)))
+		end
+
+		return group
+	end
+
+	local function visit(spec)
+		local package, dependencies = normalize_spec(spec)
+		local group = register(package)
+		local cycle_start = visiting[group]
+
+		if cycle_start ~= nil then
+			fail_cycle(stack, cycle_start, group)
+		end
+
+		visiting[group] = #stack + 1
+		table.insert(stack, group)
+
+		for _, dependency_spec in ipairs(dependencies) do
+			local dependency = visit(dependency_spec)
+
+			if not group.dependency_set[dependency] then
+				group.dependency_set[dependency] = true
+				table.insert(group.dependencies, dependency)
+				table.insert(dependency.dependents, group)
+			end
+		end
+
+		visiting[group] = nil
+		table.remove(stack)
+
+		return group
+	end
+
+	for _, spec in ipairs(specs) do
+		visit(spec)
+	end
+
+	assert_acyclic(groups)
+
+	return groups
+end
+
+local function order_groups(groups)
+	local indegree = {}
+	local emitted = {}
+	local packages = {}
+
+	for _, group in ipairs(groups) do
+		indegree[group] = #group.dependencies
+	end
+
+	while #packages < #groups do
+		local next_group
+
+		for _, group in ipairs(groups) do
+			if not emitted[group] and indegree[group] == 0 then
+				next_group = group
+				break
+			end
+		end
+
+		if next_group == nil then
+			fail("dependency cycle")
+		end
+
+		emitted[next_group] = true
+		table.insert(packages, next_group.package)
+
+		for _, dependent in ipairs(next_group.dependents) do
+			indegree[dependent] = indegree[dependent] - 1
+		end
+	end
+
+	return packages
 end
 
 local function add(specs, opts)
@@ -52,11 +210,8 @@ local function add(specs, opts)
 		fail("plugin specifications must be a list")
 	end
 
-	local packages = {}
-
-	for _, spec in ipairs(specs) do
-		table.insert(packages, normalize_spec(spec))
-	end
+	local groups = collect_specs(specs)
+	local packages = order_groups(groups)
 
 	return vim.pack.add(packages, opts)
 end
