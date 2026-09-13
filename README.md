@@ -123,7 +123,8 @@ use({ "owner/plugin" })
 - `false`, `nil`, or omitting `global` disables the alias.
 
 Setup fails, leaving the previous alias and repository unchanged, if the
-requested name is already defined by something other than lack.nvim.
+requested name is already defined by something other than lack.nvim, even if
+that value is `false`.
 Renaming or disabling the alias only clears it if lack.nvim still owns it.
 
 ### Dependencies

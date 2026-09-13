@@ -449,6 +449,32 @@ test("disables only an alias still owned by lack", function()
 	end)
 end)
 
+test("re-registering the same owned global succeeds silently", function()
+	with_globals({ "use" }, function()
+		lack.setup({ global = true })
+		equal(lack, rawget(_G, "use"))
+
+		lack.setup({ global = true })
+		equal(lack, rawget(_G, "use"))
+	end)
+end)
+
+test("rejects re-registering an owned global after it is hijacked", function()
+	with_globals({ "use" }, function()
+		lack.setup({ global = true })
+		equal(lack, rawget(_G, "use"))
+
+		local hijacker = {}
+		rawset(_G, "use", hijacker)
+
+		expect_error("global use is already defined", function()
+			lack.setup({ global = true })
+		end)
+
+		equal(hijacker, rawget(_G, "use"))
+	end)
+end)
+
 test("rejects invalid global names", function()
 	for _, value in ipairs({ "", "not-valid", "local", 42 }) do
 		expect_error("global", function()
