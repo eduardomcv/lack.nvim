@@ -1,0 +1,159 @@
+*lack.txt*                    Git shorthand and dependency ordering for vim.pack
+
+===============================================================================
+CONTENTS                                                        *lack-contents*
+
+1. Introduction                                                  |lack.nvim|
+2. Installation                                           |lack-installation|
+3. Usage                                                       |lack-usage|
+4. Setup                                                     |lack.setup()|
+5. Specifications                                      |lack-specifications|
+6. Dependencies                                          |lack-dependencies|
+7. Conflicts                                                |lack-conflicts|
+8. Scope                                                        |lack-scope|
+
+===============================================================================
+INTRODUCTION                                                     *lack.nvim*
+
+lack.nvim is a thin declarative wrapper around |vim.pack.add()|. It adds Git
+source shorthand and visible nested dependencies, then sends one deduplicated,
+dependency-ordered plugin list to Neovim's native package manager.
+
+Requirements: Neovim 0.12 or newer and Git. |vim.pack| is experimental, so its
+API may change between Neovim releases.
+
+===============================================================================
+INSTALLATION                                              *lack-installation*
+
+Add lack.nvim near the beginning of init.lua. The explicit `load = true` makes
+the module available immediately during startup: >lua
+
+    vim.pack.add({
+      "https://github.com/eduardomcv/lack.nvim",
+    }, {
+      load = true,
+    })
+
+    local use = require("lack")
+<
+===============================================================================
+USAGE                                                          *lack-usage*
+
+The module is a callable table: >lua
+
+    use(specs, opts)
+    use.setup(opts)
+<
+Declare plugins and configure them with ordinary Lua: >lua
+
+    use({
+      {
+        "nvim-telescope/telescope.nvim",
+        dependencies = {
+          "nvim-lua/plenary.nvim",
+        },
+      },
+    })
+
+    require("telescope").setup({})
+<
+Each use() invocation calls `vim.pack.add(resolved_plugins, opts)` exactly once.
+Native installation, loading, updates, removal, and lockfile behavior are not
+changed.
+
+===============================================================================
+SETUP                                                         *lack.setup()*
+
+The default source prefix is `https://github.com/`. Set another prefix before
+declaring plugins: >lua
+
+    use.setup({
+      repository = "https://gitlab.com/",
+    })
+<
+Trailing slashes are normalized to one slash. `repository` must be a non-empty
+string.
+
+===============================================================================
+SPECIFICATIONS                                         *lack-specifications*
+
+These forms use the same source-resolution path: >lua
+
+    "owner/plugin"
+    { "owner/plugin" }
+    { src = "owner/plugin" }
+<
+`src` takes precedence if both `src` and a positional source are present.
+
+Sources using `scheme://` or SCP-style `user@host:path` syntax pass through
+unchanged. Every other source is prefixed with the configured repository.
+
+Native fields such as `name`, `version`, and `data` are forwarded unchanged.
+Call options are passed directly as the second argument to |vim.pack.add()|: >lua
+
+    use({
+      {
+        "owner/plugin",
+        version = "v1.2.3",
+      },
+    }, {
+      confirm = false,
+    })
+<
+Other fields are forwarded, but lack.nvim does not execute lazy.nvim-style
+`config`, `init`, `opts`, or build hooks.
+
+===============================================================================
+DEPENDENCIES                                             *lack-dependencies*
+
+Specifications may contain recursive `dependencies` lists: >lua
+
+    use({
+      {
+        "NeogitOrg/neogit",
+        dependencies = {
+          "nvim-lua/plenary.nvim",
+          {
+            "sindrets/diffview.nvim",
+            dependencies = {
+              "nvim-lua/plenary.nvim",
+            },
+          },
+        },
+      },
+    })
+<
+lack.nvim gathers every dependency relationship and groups plugins by their
+effective native name. Explicit names and source-derived names use their final
+path component. A trailing `.git` is removed from source-derived names.
+
+Each plugin is emitted once. Dependencies appear before dependents, while
+independent plugins retain declaration order where the graph permits it.
+Dependencies from every duplicate occurrence contribute to the graph.
+
+A dependency cycle raises a `lack:` error before |vim.pack.add()| is called.
+The error includes the source chain involved.
+
+===============================================================================
+CONFLICTS                                                   *lack-conflicts*
+
+The first occurrence of a plugin supplies its fields and stable position. A
+later explicit version can fill a missing first version. Conflicting resolved
+sources or versions raise a `lack:` error before |vim.pack.add()| is called.
+
+Duplicate version normalization follows native, order-sensitive behavior. An
+omitted version followed by an explicit version is accepted and uses the
+explicit version. An explicit version followed by an omitted version is a
+conflict.
+
+lack.nvim does not solve versions or intersect version ranges.
+
+===============================================================================
+SCOPE                                                           *lack-scope*
+
+lack.nvim intentionally provides only declaration shorthand and dependency
+collection. It does not provide lazy loading, configuration execution,
+commands, user interfaces, build orchestration, version solving, its own
+lockfile, updates, removal, or automatic bootstrap behavior.
+
+vim:tw=78:ts=8:noet:ft=help:norl:
