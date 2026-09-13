@@ -164,11 +164,22 @@ retain declaration order where the graph permits it. Dependency cycles are
 reported before `vim.pack.add()` is called.
 
 When a plugin occurs more than once, the first occurrence supplies its fields
-and stable position while every occurrence contributes dependencies. A later
-explicit version can fill a missing first version, matching native behavior.
-Resolved source or version conflicts produce a `lack:` error. Native version
-normalization is order-sensitive: an explicit version followed by an omitted
-version is a conflict.
+and stable position while every occurrence contributes dependencies. Versions
+merge regardless of declaration order:
+
+- A missing version means "any" and never conflicts with an explicit version.
+- Two [`vim.version.range()`](https://neovim.io/doc/user/lua.html#vim.version.range())
+  values merge into their intersection.
+- A semver pin found inside a declared range wins over the range.
+- A resolved source conflict, disjoint ranges, a pin outside a declared range,
+  or a range paired with a non-semver version (a branch or commit) all
+  produce a `lack:` error.
+
+Version merging only applies within a single `lack()` call. If a plugin is
+already active with a different version from an earlier call in the same
+session, `vim.pack` silently keeps the first call's version; lack.nvim emits a
+`vim.notify()` warning in that case so the inconsistency is visible. Collect
+every declaration into one `lack()` call to resolve versions globally instead.
 
 Each `lack()` invocation results in exactly one call:
 
@@ -185,7 +196,8 @@ collection. It does not provide:
 - plugin configuration execution
 - commands or a user interface
 - build orchestration
-- version solving or range intersection
+- version consolidation across separate `lack()`/`vim.pack.add()` calls
+  (lack.nvim only warns; see [Dependencies](#dependencies))
 - a lockfile
 - updates, removal, or automatic bootstrap behavior
 

@@ -78,6 +78,37 @@ local function with_globals(names, fn)
 	end
 end
 
+local function with_active_plugins(active, fn)
+	local original_get = vim.pack.get
+	local original_notify = vim.notify
+	local notifications = {}
+
+	vim.pack.get = function()
+		local entries = {}
+
+		for name, version in pairs(active) do
+			table.insert(entries, { active = true, spec = { name = name, version = version } })
+		end
+
+		return entries
+	end
+
+	vim.notify = function(message, level)
+		table.insert(notifications, { message = message, level = level })
+	end
+
+	local ok, err = xpcall(function()
+		fn(notifications)
+	end, debug.traceback)
+
+	vim.pack.get = original_get
+	vim.notify = original_notify
+
+	if not ok then
+		error(err, 0)
+	end
+end
+
 test("resolves string, positional, and src forms uniformly", function()
 	local call = invoke({
 		"owner/string",
@@ -318,13 +349,125 @@ test("rejects duplicate identities with conflicting versions", function()
 	equal(false, called)
 end)
 
-test("preserves native version conflict ordering", function()
+test("fills a missing version regardless of declaration order", function()
+	local call = invoke({
+		{ "owner/plugin", version = "v1.0.0" },
+		"owner/plugin",
+	})
+
+	equal("v1.0.0", call.packages[1].version)
+end)
+
+test("intersects overlapping version ranges", function()
+	local call = invoke({
+		{ "owner/plugin", version = vim.version.range(">=9.0") },
+		{ "owner/plugin", version = vim.version.range("<9.5") },
+	})
+
+	local merged = call.packages[1].version
+
+	equal(true, pcall(merged.has, merged, "1"))
+	equal(true, merged:has(vim.version.parse("v9.1.0", { strict = true })))
+	equal(false, merged:has(vim.version.parse("v8.9.0", { strict = true })))
+	equal(false, merged:has(vim.version.parse("v9.5.0", { strict = true })))
+end)
+
+test("intersects ranges regardless of declaration order", function()
+	local first = invoke({
+		{ "owner/plugin", version = vim.version.range(">=9.0") },
+		{ "owner/plugin", version = vim.version.range("<9.5") },
+	})
+	local second = invoke({
+		{ "owner/plugin", version = vim.version.range("<9.5") },
+		{ "owner/plugin", version = vim.version.range(">=9.0") },
+	})
+
+	equal(first.packages[1].version, second.packages[1].version)
+end)
+
+test("rejects disjoint version ranges", function()
+	local called = false
+	vim.pack.add = function()
+		called = true
+	end
+
 	expect_error("conflicting versions", function()
 		lack({
-			{ "owner/plugin", version = "v1.0.0" },
-			"owner/plugin",
+			{ "owner/plugin", version = vim.version.range(">=9.0") },
+			{ "owner/plugin", version = vim.version.range("<8.0") },
 		})
 	end)
+	equal(false, called)
+end)
+
+test("resolves a range and a matching pin to the pin, regardless of order", function()
+	local first = invoke({
+		{ "owner/plugin", version = vim.version.range("^9") },
+		{ "owner/plugin", version = "v9.1.0" },
+	})
+	equal("v9.1.0", first.packages[1].version)
+
+	local second = invoke({
+		{ "owner/plugin", version = "v9.1.0" },
+		{ "owner/plugin", version = vim.version.range("^9") },
+	})
+	equal("v9.1.0", second.packages[1].version)
+end)
+
+test("rejects a pin outside the declared range", function()
+	local called = false
+	vim.pack.add = function()
+		called = true
+	end
+
+	expect_error("conflicting versions", function()
+		lack({
+			{ "owner/plugin", version = vim.version.range("^9") },
+			{ "owner/plugin", version = "v10.0.0" },
+		})
+	end)
+	equal(false, called)
+end)
+
+test("rejects a version range paired with a non-semver version", function()
+	local called = false
+	vim.pack.add = function()
+		called = true
+	end
+
+	expect_error("conflicting versions", function()
+		lack({
+			{ "owner/plugin", version = vim.version.range("^9") },
+			{ "owner/plugin", version = "main" },
+		})
+	end)
+	equal(false, called)
+end)
+
+test("merges versions contributed by dependencies at different depths", function()
+	local call = invoke({
+		{
+			"owner/root",
+			dependencies = {
+				{ "owner/shared", version = vim.version.range(">=1.0") },
+			},
+		},
+		{
+			"owner/other-root",
+			dependencies = {
+				{ "owner/shared", version = "v1.5.0" },
+			},
+		},
+	})
+
+	local shared
+	for _, package in ipairs(call.packages) do
+		if package.src == "https://github.com/owner/shared" then
+			shared = package
+		end
+	end
+
+	equal("v1.5.0", shared.version)
 end)
 
 test("reports dependency cycles before calling vim.pack.add", function()
@@ -349,6 +492,40 @@ test("reports dependency cycles before calling vim.pack.add", function()
 	if not err:find("owner/first", 1, true) or not err:find("owner/second", 1, true) then
 		error("cycle error does not identify the complete plugin chain")
 	end
+end)
+
+test("warns when a plugin is already active with a conflicting version", function()
+	with_active_plugins({ plugin = "v1.0.0" }, function(notifications)
+		invoke({ { "owner/plugin", version = "v2.0.0" } })
+
+		equal(1, #notifications)
+		equal(vim.log.levels.WARN, notifications[1].level)
+
+		if not notifications[1].message:find("plugin", 1, true) then
+			error("warning message does not mention the plugin name")
+		end
+	end)
+end)
+
+test("does not warn when no version is active for the plugin", function()
+	with_active_plugins({}, function(notifications)
+		invoke({ { "owner/plugin", version = "v2.0.0" } })
+		equal(0, #notifications)
+	end)
+end)
+
+test("does not warn when the requested version matches the active version", function()
+	with_active_plugins({ plugin = "v1.0.0" }, function(notifications)
+		invoke({ { "owner/plugin", version = "v1.0.0" } })
+		equal(0, #notifications)
+	end)
+end)
+
+test("does not warn for plugins vim.pack does not know about", function()
+	with_active_plugins({ ["other-plugin"] = "v1.0.0" }, function(notifications)
+		invoke({ { "owner/plugin", version = "v2.0.0" } })
+		equal(0, #notifications)
+	end)
 end)
 
 local invalid_specs = {

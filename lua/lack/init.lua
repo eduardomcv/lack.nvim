@@ -64,6 +64,69 @@ local function resolve_source(source)
 	return repository .. source
 end
 
+local range_mt = getmetatable(vim.version.range("*"))
+
+local function is_version_range(value)
+	return type(value) == "table" and pcall(value.has, value, "1")
+end
+
+local function is_semver_pin(value)
+	if type(value) ~= "string" then
+		return false
+	end
+
+	local ok, parsed = pcall(vim.version.parse, value, { strict = true })
+	return ok and parsed ~= nil
+end
+
+local function intersect_ranges(a, b)
+	local from = b.from > a.from and b.from or a.from
+	local to
+
+	if a.to == nil then
+		to = b.to
+	elseif b.to == nil then
+		to = a.to
+	else
+		to = (b.to < a.to) and b.to or a.to
+	end
+
+	if to == nil or from < to or (from == to and a:has(from) and b:has(from)) then
+		return setmetatable({ from = from, to = to }, range_mt)
+	end
+end
+
+local function merge_versions(name, current, incoming)
+	if current == nil then
+		return incoming
+	end
+
+	if incoming == nil then
+		return current
+	end
+
+	if current == incoming then
+		return current
+	end
+
+	local current_is_range = is_version_range(current)
+	local incoming_is_range = is_version_range(incoming)
+
+	if current_is_range and incoming_is_range then
+		local merged = intersect_ranges(current, incoming)
+
+		if merged ~= nil then
+			return merged
+		end
+	elseif current_is_range and is_semver_pin(incoming) and current:has(incoming) then
+		return incoming
+	elseif incoming_is_range and is_semver_pin(current) and incoming:has(current) then
+		return current
+	end
+
+	fail(("conflicting versions for %s"):format(tostring(name)))
+end
+
 local function normalize_spec(spec)
 	if type(spec) == "string" then
 		spec = { spec }
@@ -166,11 +229,7 @@ local function collect_specs(specs)
 			fail(("conflicting sources for %s: %s and %s"):format(tostring(name), group.package.src, package.src))
 		end
 
-		if group.package.version == nil then
-			group.package.version = package.version
-		elseif group.package.version ~= package.version then
-			fail(("conflicting versions for %s"):format(tostring(name)))
-		end
+		group.package.version = merge_versions(name, group.package.version, package.version)
 
 		return group
 	end
@@ -246,6 +305,43 @@ local function order_groups(groups)
 	return packages
 end
 
+local function warn_active_conflicts(packages)
+	if #packages == 0 then
+		return
+	end
+
+	local ok, known = pcall(vim.pack.get, nil, { info = false })
+
+	if not ok or type(known) ~= "table" then
+		return
+	end
+
+	local active_versions = {}
+	for _, entry in ipairs(known) do
+		if entry.active then
+			active_versions[entry.spec.name] = entry.spec.version
+		end
+	end
+
+	for _, package in ipairs(packages) do
+		local name = plugin_name(package)
+		local active_version = active_versions[name]
+
+		if active_version ~= nil then
+			local merge_ok = pcall(merge_versions, name, active_version, package.version)
+
+			if not merge_ok then
+				vim.notify(
+					("lack: %s is already active with a different version; vim.pack keeps the active plugin's version"):format(
+						name
+					),
+					vim.log.levels.WARN
+				)
+			end
+		end
+	end
+end
+
 local function add(specs, opts)
 	if type(specs) ~= "table" or not vim.islist(specs) then
 		fail("plugin specifications must be a list")
@@ -253,6 +349,8 @@ local function add(specs, opts)
 
 	local groups = collect_specs(specs)
 	local packages = order_groups(groups)
+
+	warn_active_conflicts(packages)
 
 	return vim.pack.add(packages, opts)
 end
