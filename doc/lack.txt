@@ -7,10 +7,11 @@ CONTENTS                                                        *lack-contents*
 2. Installation                                           |lack-installation|
 3. Usage                                                       |lack-usage|
 4. Setup                                                     |lack.setup()|
-5. Specifications                                      |lack-specifications|
-6. Dependencies                                          |lack-dependencies|
-7. Conflicts                                                |lack-conflicts|
-8. Scope                                                        |lack-scope|
+5. Global                                                      |lack-global|
+6. Specifications                                      |lack-specifications|
+7. Dependencies                                          |lack-dependencies|
+8. Conflicts                                                |lack-conflicts|
+9. Scope                                                        |lack-scope|
 
 ===============================================================================
 INTRODUCTION                                                     *lack.nvim*
@@ -73,6 +74,30 @@ declaring plugins: >lua
 <
 Trailing slashes are normalized to one slash. `repository` must be a non-empty
 string.
+
+===============================================================================
+GLOBAL                                                          *lack-global*
+
+`setup()` accepts a `global` option that exposes the callable module without
+an explicit require(): >lua
+
+    use.setup({
+      global = true,
+    })
+
+    use({ "owner/plugin" })
+<
+`global` accepts a boolean, a string, or nil:
+
+    true      registers the module as `use`.
+    "name"    registers the module under that name instead. It must be a
+              valid Lua identifier.
+    false     disables the alias.
+    nil       disables the alias. This is also the default.
+
+Setup fails, leaving the previous alias and repository unchanged, if the
+requested name is already defined by something other than lack.nvim.
+Renaming or disabling the alias only clears it if lack.nvim still owns it.
 
 ===============================================================================
 SPECIFICATIONS                                         *lack-specifications*
