@@ -1,0 +1,359 @@
+--- Needed for mocking vim.pack.add() in the tests below
+--- @diagnostic disable: duplicate-set-field
+
+local lack = require("lack")
+
+local tests = {}
+local original_add = vim.pack.add
+
+local function test(name, fn)
+	table.insert(tests, { name = name, fn = fn })
+end
+
+local function equal(expected, actual)
+	if not vim.deep_equal(expected, actual) then
+		error(("expected:\n%s\nactual:\n%s"):format(vim.inspect(expected), vim.inspect(actual)), 2)
+	end
+end
+
+local function invoke(specs, opts)
+	local call = { count = 0 }
+
+	vim.pack.add = function(packages, add_opts)
+		call.count = call.count + 1
+		call.packages = packages
+		call.opts = add_opts
+		return "native-result"
+	end
+
+	local result = lack(specs, opts)
+
+	equal("native-result", result)
+	equal(1, call.count)
+
+	return call
+end
+
+local function expect_error(fragment, fn)
+	local ok, err = pcall(fn)
+
+	if ok then
+		error(("expected error containing %q"):format(fragment), 2)
+	end
+
+	err = tostring(err)
+	if not err:find(fragment, 1, true) then
+		error(("expected error containing %q, got:\n%s"):format(fragment, err), 2)
+	end
+
+	return err
+end
+
+local function sources(packages)
+	local result = {}
+
+	for _, package in ipairs(packages) do
+		table.insert(result, package.src)
+	end
+
+	return result
+end
+
+test("resolves string, positional, and src forms uniformly", function()
+	local call = invoke({
+		"owner/string",
+		{ "owner/positional" },
+		{ src = "owner/named" },
+	})
+
+	equal({
+		"https://github.com/owner/string",
+		"https://github.com/owner/positional",
+		"https://github.com/owner/named",
+	}, sources(call.packages))
+end)
+
+test("src takes precedence over the positional source", function()
+	local call = invoke({
+		{
+			"owner/ignored",
+			src = "owner/selected",
+		},
+	})
+
+	equal({
+		{ src = "https://github.com/owner/selected" },
+	}, call.packages)
+end)
+
+test("passes URI and SCP-style sources through unchanged", function()
+	local call = invoke({
+		"https://example.com/owner/https",
+		"ssh://git@example.com/owner/ssh",
+		"git://example.com/owner/git",
+		"file:///tmp/file-plugin",
+		"git@example.com:owner/scp",
+	})
+
+	equal({
+		"https://example.com/owner/https",
+		"ssh://git@example.com/owner/ssh",
+		"git://example.com/owner/git",
+		"file:///tmp/file-plugin",
+		"git@example.com:owner/scp",
+	}, sources(call.packages))
+end)
+
+test("uses the configured repository with one trailing slash", function()
+	lack.setup({
+		repository = "https://code.example/plugins///",
+	})
+
+	local call = invoke({ "owner/plugin" })
+
+	equal({
+		{ src = "https://code.example/plugins/owner/plugin" },
+	}, call.packages)
+end)
+
+test("forwards package fields and call options without mutation", function()
+	local specs = {
+		{
+			"owner/plugin",
+			name = "custom-plugin",
+			version = "v1.2.3",
+			data = { channel = "stable" },
+		},
+	}
+	local opts = {
+		confirm = false,
+		load = false,
+	}
+	local original_specs = vim.deepcopy(specs)
+	local call = invoke(specs, opts)
+
+	equal({
+		{
+			src = "https://github.com/owner/plugin",
+			name = "custom-plugin",
+			version = "v1.2.3",
+			data = { channel = "stable" },
+		},
+	}, call.packages)
+	equal(original_specs, specs)
+	equal(opts, call.opts)
+
+	if call.opts ~= opts then
+		error("vim.pack.add() did not receive the original options table")
+	end
+end)
+
+test("orders dependencies before dependents and deduplicates them", function()
+	local call = invoke({
+		{
+			"owner/telescope",
+			dependencies = { "owner/plenary" },
+		},
+		{
+			"owner/neogit",
+			dependencies = {
+				"owner/plenary",
+				{
+					"owner/diffview",
+					dependencies = { "owner/plenary" },
+				},
+			},
+		},
+	})
+
+	equal({
+		"https://github.com/owner/plenary",
+		"https://github.com/owner/telescope",
+		"https://github.com/owner/diffview",
+		"https://github.com/owner/neogit",
+	}, sources(call.packages))
+end)
+
+test("collects dependencies from every duplicate occurrence", function()
+	local call = invoke({
+		{
+			"owner/plugin",
+			dependencies = { "owner/first-dependency" },
+		},
+		{
+			"owner/plugin",
+			dependencies = { "owner/second-dependency" },
+		},
+	})
+
+	equal({
+		"https://github.com/owner/first-dependency",
+		"https://github.com/owner/second-dependency",
+		"https://github.com/owner/plugin",
+	}, sources(call.packages))
+end)
+
+test("retains independent declaration order", function()
+	local call = invoke({
+		"owner/first",
+		"owner/second",
+		"owner/third",
+	})
+
+	equal({
+		"https://github.com/owner/first",
+		"https://github.com/owner/second",
+		"https://github.com/owner/third",
+	}, sources(call.packages))
+end)
+
+test("fills a missing canonical version from a duplicate", function()
+	local call = invoke({
+		{
+			"owner/plugin",
+			data = { canonical = true },
+		},
+		{
+			"owner/plugin",
+			version = "v2.0.0",
+			data = { canonical = false },
+		},
+	})
+
+	equal({
+		{
+			src = "https://github.com/owner/plugin",
+			version = "v2.0.0",
+			data = { canonical = true },
+		},
+	}, call.packages)
+end)
+
+test("rejects duplicate identities with conflicting sources", function()
+	local called = false
+	vim.pack.add = function()
+		called = true
+	end
+
+	expect_error("lack:", function()
+		lack({
+			{ "owner/first", name = "plugin" },
+			{ "owner/second", name = "plugin" },
+		})
+	end)
+	equal(false, called)
+end)
+
+test("rejects duplicate identities with conflicting versions", function()
+	local called = false
+	vim.pack.add = function()
+		called = true
+	end
+
+	expect_error("lack:", function()
+		lack({
+			{ "owner/plugin", version = "v1.0.0" },
+			{ "owner/plugin", version = "v2.0.0" },
+		})
+	end)
+	equal(false, called)
+end)
+
+test("reports dependency cycles before calling vim.pack.add", function()
+	local called = false
+	vim.pack.add = function()
+		called = true
+	end
+
+	local first = { "owner/first" }
+	local second = {
+		"owner/second",
+		dependencies = { first },
+	}
+	first.dependencies = { second }
+
+	local err = expect_error("lack:", function()
+		lack({ first })
+	end)
+
+	equal(false, called)
+
+	if not err:find("owner/first", 1, true) or not err:find("owner/second", 1, true) then
+		error("cycle error does not identify the complete plugin chain")
+	end
+end)
+
+local invalid_specs = {
+	{
+		name = "rejects a non-list top-level specification",
+		specs = { plugin = "owner/plugin" },
+	},
+	{
+		name = "rejects a non-string and non-table plugin specification",
+		specs = { 42 },
+	},
+	{
+		name = "rejects a missing plugin source",
+		specs = { { version = "v1.0.0" } },
+	},
+	{
+		name = "rejects an empty plugin source",
+		specs = { "" },
+	},
+	{
+		name = "rejects a non-list dependencies value",
+		specs = {
+			{
+				"owner/plugin",
+				dependencies = { plugin = "owner/dependency" },
+			},
+		},
+	},
+}
+
+for _, case in ipairs(invalid_specs) do
+	test(case.name, function()
+		expect_error("lack:", function()
+			lack(case.specs)
+		end)
+	end)
+end
+
+test("rejects an empty configured repository", function()
+	expect_error("lack:", function()
+		lack.setup({ repository = "" })
+	end)
+end)
+
+local failures = {}
+
+for _, case in ipairs(tests) do
+	lack.setup({
+		repository = "https://github.com/",
+	})
+
+	local ok, err = xpcall(case.fn, debug.traceback)
+
+	if ok then
+		print("ok - " .. case.name)
+	else
+		table.insert(failures, {
+			name = case.name,
+			error = err,
+		})
+		print("not ok - " .. case.name)
+	end
+end
+
+vim.pack.add = original_add
+
+if #failures > 0 then
+	for _, failure in ipairs(failures) do
+		io.stderr:write(("\n%s\n%s\n"):format(failure.name, failure.error))
+	end
+
+	vim.cmd("cquit 1")
+end
+
+print(("%d tests passed"):format(#tests))
+vim.cmd("qa!")
