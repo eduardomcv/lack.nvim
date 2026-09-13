@@ -102,6 +102,30 @@ require("lack").setup({
 
 Trailing slashes are normalized to one slash.
 
+### Global
+
+`setup()` also accepts a `global` option that exposes the callable module
+without an explicit `require`:
+
+```lua
+require("lack").setup({
+  global = true,
+})
+
+use({ "owner/plugin" })
+```
+
+`global` accepts a boolean, a string, or `nil`:
+
+- `true` registers the module as `use`.
+- A string registers the module under that name instead. It must be a valid
+  Lua identifier.
+- `false`, `nil`, or omitting `global` disables the alias.
+
+Setup fails, leaving the previous alias and repository unchanged, if the
+requested name is already defined by something other than lack.nvim.
+Renaming or disabling the alias only clears it if lack.nvim still owns it.
+
 ### Dependencies
 
 Dependencies may be nested to any depth:
