@@ -1,6 +1,6 @@
 # lack.nvim
 
-Git shorthand and explicit dependency ordering for `vim.pack.add()`.
+A thin, declarative front-end for `vim.pack.add()`.
 
 Declare plugins with familiar table syntax. lack.nvim resolves sources, gathers
 nested dependencies, and passes one deduplicated, dependency-ordered list to
