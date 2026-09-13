@@ -223,7 +223,11 @@ function M.setup(opts)
 		fail("setup options must be a table")
 	end
 
-	local source = opts.repository or repository
+	local source = opts.repository
+	if source == nil then
+		source = repository
+	end
+
 	if type(source) ~= "string" or source == "" then
 		fail("repository must be a non-empty string")
 	end
