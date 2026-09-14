@@ -1,0 +1,13 @@
+# Changelog
+
+Notable changes to lack.nvim are documented here.
+
+## [Unreleased]
+
+### Added
+
+- Initial versioned release.
+- Declarative plugin specifications and configurable source shorthand.
+- Nested dependency collection, deduplication, and ordering.
+- Version-constraint merging and conflict detection.
+- Optional global alias.

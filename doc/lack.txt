@@ -12,6 +12,7 @@ CONTENTS                                                        *lack-contents*
 7. Dependencies                                          |lack-dependencies|
 8. Conflicts                                                |lack-conflicts|
 9. Scope                                                        |lack-scope|
+10. Versioning                                            |lack-versioning|
 
 ===============================================================================
 INTRODUCTION                                                     *lack.nvim*
@@ -36,6 +37,23 @@ the module available immediately during startup: >lua
     })
 
     local lack = require("lack")
+<
+To stay on a specific release, set `version` to a published tag: >lua
+
+    vim.pack.add({
+      {
+        src = "https://github.com/eduardomcv/lack.nvim",
+        version = "v0.1.0",
+      },
+    }, {
+      load = true,
+    })
+
+    local lack = require("lack")
+<
+Use a range instead to allow compatible `0.1.x` updates: >lua
+
+    version = vim.version.range("~0.1.0")
 <
 ===============================================================================
 USAGE                                                          *lack-usage*
@@ -201,5 +219,18 @@ commands, user interfaces, build orchestration, version consolidation across
 separate lack()/|vim.pack.add()| calls (lack.nvim only warns; see
 |lack-conflicts|), its own lockfile, updates, removal, or automatic bootstrap
 behavior.
+
+==============================================================================
+VERSIONING                                                *lack-versioning*
+
+lack.nvim uses Semantic Versioning and publishes releases as
+`vMAJOR.MINOR.PATCH` tags. Published tags are immutable. Before `1.0.0`,
+compatible fixes and additions increment the patch version, while breaking
+changes increment the minor version. From `1.0.0` onward, standard Semantic
+Versioning applies.
+
+Breaking changes include incompatible changes to documented configuration or
+behavior and increases to the minimum supported Neovim version. User-visible
+changes and migration guidance are recorded in CHANGELOG.md.
 
 vim:tw=78:ts=8:noet:ft=help:norl:

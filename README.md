@@ -27,6 +27,27 @@ vim.pack.add({ "https://github.com/eduardomcv/lack.nvim" }, {
 local lack = require("lack")
 ```
 
+To stay on a specific release, set `version` to a published tag:
+
+```lua
+vim.pack.add({
+  {
+    src = "https://github.com/eduardomcv/lack.nvim",
+    version = "v0.1.0",
+  },
+}, {
+  load = true,
+})
+
+local lack = require("lack")
+```
+
+Use a range instead to allow compatible `0.1.x` updates:
+
+```lua
+version = vim.version.range("~0.1.0")
+```
+
 ## Usage
 
 ```lua
@@ -203,6 +224,18 @@ collection. It does not provide:
 
 Installation, loading, updates, removal, and lockfile handling remain native
 `vim.pack` responsibilities.
+
+## Versioning
+
+lack.nvim uses [Semantic Versioning](https://semver.org/) and publishes releases
+as `vMAJOR.MINOR.PATCH` tags. Published tags are immutable. Before `1.0.0`,
+compatible fixes and additions increment the patch version, while breaking
+changes increment the minor version. From `1.0.0` onward, standard SemVer
+applies.
+
+Breaking changes include incompatible changes to documented configuration or
+behavior and increases to the minimum supported Neovim version. User-visible
+changes and migration guidance are recorded in the [changelog](CHANGELOG.md).
 
 ## Development
 
