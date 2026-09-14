@@ -572,6 +572,7 @@ end)
 
 test("rejects a non-string configured repository", function()
 	expect_error("repository must be a non-empty string", function()
+		---@diagnostic disable-next-line: assign-type-mismatch
 		lack.setup({ repository = false })
 	end)
 end)

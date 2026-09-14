@@ -1,9 +1,37 @@
+---@class lack.SetupOpts
+---@field repository? string
+---@field global? boolean|string
+
+---@class lack.PluginSpec
+---@field [1]? string
+---@field src? string
+---@field name? string
+---@field version? string|vim.VersionRange
+---@field data? any
+---@field dependencies? lack.Spec[]
+---@field [string] any
+
+---@alias lack.Spec string|lack.PluginSpec
+---@alias lack.Version string|vim.VersionRange
+
+---@class lack.DependencyGroup
+---@field package vim.pack.Spec
+---@field dependencies lack.DependencyGroup[]
+---@field dependency_set table<lack.DependencyGroup, boolean>
+---@field dependents lack.DependencyGroup[]
+
+---@class lack.Module
+---@field setup fun(opts?: lack.SetupOpts)
+---@overload fun(specs: lack.Spec[], opts?: vim.pack.keyset.add): any
+
 local M = {}
 
 local default_repository = "https://github.com/"
 local repository = default_repository
+---@type string?
 local registered_global = nil
 
+---@type table<string, boolean>
 local lua_keywords = {
 	["and"] = true,
 	["break"] = true,
@@ -29,10 +57,13 @@ local lua_keywords = {
 	["while"] = true,
 }
 
+---@param message string
 local function fail(message)
 	error("lack: " .. message, 0)
 end
 
+---@param value? boolean|string
+---@return string?
 local function resolve_global(value)
 	if value == nil or value == false then
 		return nil
@@ -45,6 +76,7 @@ local function resolve_global(value)
 	if type(value) ~= "string" then
 		fail("global must be a boolean, string, or nil")
 	end
+	---@cast value string
 
 	if not value:match("^[A-Za-z_][A-Za-z0-9_]*$") or lua_keywords[value] then
 		fail("global must be a valid Lua identifier")
@@ -53,6 +85,8 @@ local function resolve_global(value)
 	return value
 end
 
+---@param source string
+---@return string
 local function resolve_source(source)
 	local has_scheme = source:match("^%a[%w+.-]*://") ~= nil
 	local is_scp_ssh = source:match("^[^/%s@:]+@[^/%s:]+:") ~= nil
@@ -65,11 +99,16 @@ local function resolve_source(source)
 end
 
 local range_mt = getmetatable(vim.version.range("*"))
+---@cast range_mt table
 
+---@param value any
+---@return boolean
 local function is_version_range(value)
 	return type(value) == "table" and pcall(value.has, value, "1")
 end
 
+---@param value any
+---@return boolean
 local function is_semver_pin(value)
 	if type(value) ~= "string" then
 		return false
@@ -79,6 +118,9 @@ local function is_semver_pin(value)
 	return ok and parsed ~= nil
 end
 
+---@param a vim.VersionRange
+---@param b vim.VersionRange
+---@return vim.VersionRange?
 local function intersect_ranges(a, b)
 	local from = b.from > a.from and b.from or a.from
 	local to
@@ -92,10 +134,16 @@ local function intersect_ranges(a, b)
 	end
 
 	if to == nil or from < to or (from == to and a:has(from) and b:has(from)) then
-		return setmetatable({ from = from, to = to }, range_mt)
+		local range = setmetatable({ from = from, to = to }, range_mt)
+		---@cast range vim.VersionRange
+		return range
 	end
 end
 
+---@param name string
+---@param current? lack.Version
+---@param incoming? lack.Version
+---@return lack.Version?
 local function merge_versions(name, current, incoming)
 	if current == nil then
 		return incoming
@@ -111,22 +159,35 @@ local function merge_versions(name, current, incoming)
 
 	local current_is_range = is_version_range(current)
 	local incoming_is_range = is_version_range(incoming)
+	local current_range = current_is_range and current or nil
+	local incoming_range = incoming_is_range and incoming or nil
+	---@cast current_range vim.VersionRange?
+	---@cast incoming_range vim.VersionRange?
 
-	if current_is_range and incoming_is_range then
-		local merged = intersect_ranges(current, incoming)
+	if current_range and incoming_range then
+		local merged = intersect_ranges(current_range, incoming_range)
 
 		if merged ~= nil then
 			return merged
 		end
-	elseif current_is_range and is_semver_pin(incoming) and current:has(incoming) then
-		return incoming
-	elseif incoming_is_range and is_semver_pin(current) and incoming:has(current) then
-		return current
+	elseif current_range and is_semver_pin(incoming) then
+		---@cast incoming string
+		if current_range:has(incoming) then
+			return incoming
+		end
+	elseif incoming_range and is_semver_pin(current) then
+		---@cast current string
+		if incoming_range:has(current) then
+			return current
+		end
 	end
 
 	fail(("conflicting versions for %s"):format(tostring(name)))
 end
 
+---@param spec lack.Spec
+---@return vim.pack.Spec package
+---@return lack.Spec[] dependencies
 local function normalize_spec(spec)
 	if type(spec) == "string" then
 		spec = { spec }
@@ -138,12 +199,13 @@ local function normalize_spec(spec)
 	if type(source) ~= "string" or source == "" then
 		fail("plugin specification requires a non-empty source")
 	end
+	---@cast source string
 
 	if spec.dependencies ~= nil and (type(spec.dependencies) ~= "table" or not vim.islist(spec.dependencies)) then
 		fail("dependencies must be a list")
 	end
 
-	local package = {}
+	local package = {} ---@type table<string, any>
 
 	for key, value in pairs(spec) do
 		if key ~= 1 and key ~= "src" and key ~= "dependencies" then
@@ -152,16 +214,22 @@ local function normalize_spec(spec)
 	end
 
 	package.src = resolve_source(source)
+	---@cast package vim.pack.Spec
 
 	return package, spec.dependencies or {}
 end
 
+---@param package vim.pack.Spec
+---@return string
 local function plugin_name(package)
 	local name = package.name or package.src:gsub("%.git$", "")
 
 	return (type(name) == "string" and name or ""):match("[^/]+$") or ""
 end
 
+---@param stack lack.DependencyGroup[]
+---@param start integer
+---@param repeated lack.DependencyGroup
 local function fail_cycle(stack, start, repeated)
 	local cycle = {}
 
@@ -173,11 +241,13 @@ local function fail_cycle(stack, start, repeated)
 	fail("dependency cycle: " .. table.concat(cycle, " -> "))
 end
 
+---@param groups lack.DependencyGroup[]
 local function assert_acyclic(groups)
-	local state = {}
-	local stack = {}
-	local positions = {}
+	local state = {} ---@type table<lack.DependencyGroup, integer>
+	local stack = {} ---@type lack.DependencyGroup[]
+	local positions = {} ---@type table<lack.DependencyGroup, integer>
 
+	---@param group lack.DependencyGroup
 	local function visit(group)
 		state[group] = 1
 		positions[group] = #stack + 1
@@ -203,17 +273,22 @@ local function assert_acyclic(groups)
 	end
 end
 
+---@param specs lack.Spec[]
+---@return lack.DependencyGroup[]
 local function collect_specs(specs)
-	local groups = {}
-	local groups_by_name = {}
-	local visiting = {}
-	local stack = {}
+	local groups = {} ---@type lack.DependencyGroup[]
+	local groups_by_name = {} ---@type table<string, lack.DependencyGroup>
+	local visiting = {} ---@type table<lack.DependencyGroup, integer>
+	local stack = {} ---@type lack.DependencyGroup[]
 
+	---@param package vim.pack.Spec
+	---@return lack.DependencyGroup
 	local function register(package)
 		local name = plugin_name(package)
 		local group = groups_by_name[name]
 
 		if group == nil then
+			---@type lack.DependencyGroup
 			group = {
 				package = package,
 				dependencies = {},
@@ -234,6 +309,8 @@ local function collect_specs(specs)
 		return group
 	end
 
+	---@param spec lack.Spec
+	---@return lack.DependencyGroup
 	local function visit(spec)
 		local package, dependencies = normalize_spec(spec)
 		local group = register(package)
@@ -271,10 +348,12 @@ local function collect_specs(specs)
 	return groups
 end
 
+---@param groups lack.DependencyGroup[]
+---@return vim.pack.Spec[]
 local function order_groups(groups)
-	local indegree = {}
-	local emitted = {}
-	local packages = {}
+	local indegree = {} ---@type table<lack.DependencyGroup, integer>
+	local emitted = {} ---@type table<lack.DependencyGroup, boolean>
+	local packages = {} ---@type vim.pack.Spec[]
 
 	for _, group in ipairs(groups) do
 		indegree[group] = #group.dependencies
@@ -305,6 +384,7 @@ local function order_groups(groups)
 	return packages
 end
 
+---@param packages vim.pack.Spec[]
 local function warn_active_conflicts(packages)
 	if #packages == 0 then
 		return
@@ -316,7 +396,7 @@ local function warn_active_conflicts(packages)
 		return
 	end
 
-	local active_versions = {}
+	local active_versions = {} ---@type table<string, lack.Version>
 	for _, entry in ipairs(known) do
 		if entry.active then
 			active_versions[entry.spec.name] = entry.spec.version
@@ -342,6 +422,9 @@ local function warn_active_conflicts(packages)
 	end
 end
 
+---@param specs lack.Spec[]
+---@param opts? vim.pack.keyset.add
+---@return any
 local function add(specs, opts)
 	if type(specs) ~= "table" or not vim.islist(specs) then
 		fail("plugin specifications must be a list")
@@ -355,6 +438,7 @@ local function add(specs, opts)
 	return vim.pack.add(packages, opts)
 end
 
+---@param opts? lack.SetupOpts
 function M.setup(opts)
 	opts = opts or {}
 
@@ -399,7 +483,12 @@ function M.setup(opts)
 	repository = source .. "/"
 end
 
+---@cast M lack.Module
 return setmetatable(M, {
+	---@param _ lack.Module
+	---@param specs lack.Spec[]
+	---@param opts? vim.pack.keyset.add
+	---@return any
 	__call = function(_, specs, opts)
 		return add(specs, opts)
 	end,
