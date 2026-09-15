@@ -149,52 +149,17 @@ Trailing slashes are normalized to one slash.
 
 ### Global
 
-`setup()` also accepts a `global` option that exposes the callable module
-without an explicit `require`:
+lack.nvim does not register a global. Assign the module yourself if you prefer
+calling it without `require`:
 
 ```lua
-require("lack").setup({
-  global = true,
-})
-
-lack({ "owner/plugin" })
-```
-
-`global` accepts a boolean, a string, or `nil`:
-
-- `true` registers the module as `lack`, matching the plugin name.
-- A string registers the module under that name instead. It must be a valid
-  Lua identifier.
-- `false`, `nil`, or omitting `global` disables the alias.
-
-To use a different name, such as `use`, pass it as a string:
-
-```lua
-require("lack").setup({
-  global = "use",
-})
+_G.use = require("lack")
 
 use({ "owner/plugin" })
 ```
 
-Setup fails, leaving the previous alias and repository unchanged, if the
-requested name is already defined by something other than `lack.nvim`, even if
-that value is `false`.
-Renaming or disabling the alias only clears it if `lack.nvim` still owns it.
-
-Because the alias is created at runtime, LuaLS cannot infer its type. Declare
-it alongside `setup()` to get completion and diagnostics:
-
-```lua
-require("lack").setup({
-  global = "use",
-})
-
----@type lack.Module
-_G.use = require("lack")
-```
-
-`lack.Module` resolves only when `lack.nvim`'s `lua` directory is on LuaLS's
+`lack.Module` is inferred automatically, giving completion and diagnostics on
+`use`, as long as `lack.nvim`'s `lua` directory is on LuaLS's
 `workspace.library`.
 
 ### Dependencies
