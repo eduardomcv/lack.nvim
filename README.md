@@ -1,10 +1,34 @@
 # lack.nvim
 
-A thin, declarative front-end for `vim.pack.add()`.
+Declare plugins with familiar table syntax.
 
-Declare plugins with familiar table syntax. lack.nvim resolves sources, gathers
-nested dependencies, and passes one deduplicated, dependency-ordered list to
-Neovim's native package manager.
+`lack.nvim` is a thin, declarative front-end for `vim.pack.add()`. It resolves
+sources, gathers nested dependencies, and passes one deduplicated,
+dependency-ordered list to Neovim's native package manager.
+
+## Motivation and scope
+
+I believe `vim.pack` is good enough, but I prefer the declarative style of
+`lazy.nvim` or `packer.nvim`. However, I don't find any use for lazy loading,
+plugin configuration, or any of the other advanced features that those plugins
+provide.
+
+So, lazy + pack = lack.
+
+`lack.nvim` intentionally provides only declaration shorthand and dependency
+collection. It does not provide:
+
+- lazy loading
+- plugin configuration execution
+- commands or a user interface
+- build orchestration
+- version consolidation across separate `lack()`/`vim.pack.add()` calls
+  (`lack.nvim` only warns; see [Dependencies](#dependencies))
+- a lockfile
+- updates, removal, or automatic bootstrap behavior
+
+Installation, loading, updates, removal, and lockfile handling remain native
+`vim.pack` responsibilities.
 
 ## Requirements
 
@@ -16,7 +40,7 @@ releases.
 
 ## Installation
 
-Add lack.nvim near the beginning of your `init.lua`. `load = true` makes the
+Add `lack.nvim` near the beginning of your `init.lua`. `load = true` makes the
 module available immediately during startup:
 
 ```lua
@@ -63,7 +87,7 @@ lack({
 require("telescope").setup({})
 ```
 
-lack.nvim only declares plugins. Configuration remains ordinary Lua and native
+`lack.nvim` only declares plugins. Configuration remains ordinary Lua and native
 `vim.pack` loading rules still apply.
 
 ### Specifications
@@ -95,7 +119,7 @@ lack({
 })
 ```
 
-Fields unknown to lack.nvim are also forwarded, but lack.nvim does not execute
+Fields unknown to `lack.nvim` are also forwarded, but `lack.nvim` does not execute
 lazy.nvim-style `config`, `init`, `opts`, or build hooks.
 
 ### Sources
@@ -154,9 +178,9 @@ use({ "owner/plugin" })
 ```
 
 Setup fails, leaving the previous alias and repository unchanged, if the
-requested name is already defined by something other than lack.nvim, even if
+requested name is already defined by something other than `lack.nvim`, even if
 that value is `false`.
-Renaming or disabling the alias only clears it if lack.nvim still owns it.
+Renaming or disabling the alias only clears it if `lack.nvim` still owns it.
 
 Because the alias is created at runtime, LuaLS cannot infer its type. Declare
 it alongside `setup()` to get completion and diagnostics:
@@ -170,7 +194,7 @@ require("lack").setup({
 _G.use = require("lack")
 ```
 
-`lack.Module` resolves only when lack.nvim's `lua` directory is on LuaLS's
+`lack.Module` resolves only when `lack.nvim`'s `lua` directory is on LuaLS's
 `workspace.library`.
 
 ### Dependencies
@@ -194,7 +218,7 @@ lack({
 })
 ```
 
-lack.nvim gathers every relationship, emits each effective native plugin name
+`lack.nvim` gathers every relationship, emits each effective native plugin name
 once, and orders dependencies before their dependents. Independent plugins
 retain declaration order where the graph permits it. Dependency cycles are
 reported before `vim.pack.add()` is called.
@@ -204,7 +228,7 @@ and stable position while every occurrence contributes dependencies. Versions
 merge regardless of declaration order:
 
 - A missing version means "any" and never conflicts with an explicit version.
-- Two [`vim.version.range()`](https://neovim.io/doc/user/lua.html#vim.version.range())
+- Two [`vim.version.range()`](<https://neovim.io/doc/user/lua.html#vim.version.range()>)
   values merge into their intersection.
 - A semver pin found inside a declared range wins over the range.
 - A resolved source conflict, disjoint ranges, a pin outside a declared range,
@@ -213,7 +237,7 @@ merge regardless of declaration order:
 
 Version merging only applies within a single `lack()` call. If a plugin is
 already active with a different version from an earlier call in the same
-session, `vim.pack` silently keeps the first call's version; lack.nvim emits a
+session, `vim.pack` silently keeps the first call's version; `lack.nvim` emits a
 `vim.notify()` warning in that case so the inconsistency is visible. Collect
 every declaration into one `lack()` call to resolve versions globally instead.
 
@@ -222,35 +246,6 @@ Each `lack()` invocation results in exactly one call:
 ```lua
 vim.pack.add(resolved_plugins, opts)
 ```
-
-## Scope
-
-lack.nvim intentionally provides only declaration shorthand and dependency
-collection. It does not provide:
-
-- lazy loading
-- plugin configuration execution
-- commands or a user interface
-- build orchestration
-- version consolidation across separate `lack()`/`vim.pack.add()` calls
-  (lack.nvim only warns; see [Dependencies](#dependencies))
-- a lockfile
-- updates, removal, or automatic bootstrap behavior
-
-Installation, loading, updates, removal, and lockfile handling remain native
-`vim.pack` responsibilities.
-
-## Versioning
-
-lack.nvim uses [Semantic Versioning](https://semver.org/) and publishes releases
-as `vMAJOR.MINOR.PATCH` tags. Published tags are immutable. Before `1.0.0`,
-compatible fixes and additions increment the patch version, while breaking
-changes increment the minor version. From `1.0.0` onward, standard SemVer
-applies.
-
-Breaking changes include incompatible changes to documented configuration or
-behavior and increases to the minimum supported Neovim version. User-visible
-changes and migration guidance are recorded in the [changelog](CHANGELOG.md).
 
 ## Development
 
