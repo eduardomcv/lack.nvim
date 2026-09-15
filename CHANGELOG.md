@@ -12,5 +12,4 @@ Notable changes to lack.nvim are documented here.
 - Declarative plugin specifications and configurable source shorthand.
 - Nested dependency collection, deduplication, and ordering.
 - Version-constraint merging and conflict detection.
-- Optional global alias.
 - Public and internal LuaLS type annotations.
