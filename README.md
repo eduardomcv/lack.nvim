@@ -158,6 +158,21 @@ requested name is already defined by something other than lack.nvim, even if
 that value is `false`.
 Renaming or disabling the alias only clears it if lack.nvim still owns it.
 
+Because the alias is created at runtime, LuaLS cannot infer its type. Declare
+it alongside `setup()` to get completion and diagnostics:
+
+```lua
+require("lack").setup({
+  global = "use",
+})
+
+---@type lack.Module
+_G.use = require("lack")
+```
+
+`lack.Module` resolves only when lack.nvim's `lua` directory is on LuaLS's
+`workspace.library`.
+
 ### Dependencies
 
 Dependencies may be nested to any depth:
