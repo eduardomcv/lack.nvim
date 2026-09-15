@@ -59,25 +59,6 @@ local function sources(packages)
 	return result
 end
 
-local function with_globals(names, fn)
-	local previous = {}
-
-	for _, name in ipairs(names) do
-		previous[name] = rawget(_G, name)
-		rawset(_G, name, nil)
-	end
-
-	local ok, err = xpcall(fn, debug.traceback)
-
-	for _, name in ipairs(names) do
-		rawset(_G, name, previous[name])
-	end
-
-	if not ok then
-		error(err, 0)
-	end
-end
-
 local function with_active_plugins(active, fn)
 	local original_get = vim.pack.get
 	local original_notify = vim.notify
@@ -577,119 +558,15 @@ test("rejects a non-string configured repository", function()
 	end)
 end)
 
-test("registers, renames, and disables the global alias", function()
-	with_globals({ "lack", "use" }, function()
-		lack.setup({ global = true })
-		equal(lack, rawget(_G, "lack"))
+test("rejects an invalid repository without changing existing setup", function()
+	lack.setup({ repository = "https://gitlab.com/" })
 
-		lack.setup({ global = "use" })
-		equal(nil, rawget(_G, "lack"))
-		equal(lack, rawget(_G, "use"))
-
-		lack.setup({})
-		equal(nil, rawget(_G, "use"))
+	expect_error("repository must be a non-empty string", function()
+		lack.setup({ repository = "" })
 	end)
-end)
 
-test("forwards calls through the global alias", function()
-	with_globals({ "lack" }, function()
-		lack.setup({ global = true })
-
-		local opts = { confirm = false }
-		local call = { count = 0 }
-
-		vim.pack.add = function(packages, add_opts)
-			call.count = call.count + 1
-			call.packages = packages
-			call.opts = add_opts
-			return "global-result"
-		end
-
-		local result = rawget(_G, "lack")({ "owner/plugin" }, opts)
-
-		equal("global-result", result)
-		equal(1, call.count)
-		equal({ { src = "https://github.com/owner/plugin" } }, call.packages)
-		equal(opts, call.opts)
-	end)
-end)
-
-test("disables only an alias still owned by lack", function()
-	with_globals({ "lack" }, function()
-		lack.setup({ global = true })
-		equal(lack, rawget(_G, "lack"))
-
-		local replacement = {}
-		rawset(_G, "lack", replacement)
-		lack.setup({ global = false })
-
-		equal(replacement, rawget(_G, "lack"))
-	end)
-end)
-
-test("re-registering the same owned global succeeds silently", function()
-	with_globals({ "lack" }, function()
-		lack.setup({ global = true })
-		equal(lack, rawget(_G, "lack"))
-
-		lack.setup({ global = true })
-		equal(lack, rawget(_G, "lack"))
-	end)
-end)
-
-test("rejects re-registering an owned global after it is hijacked", function()
-	with_globals({ "lack" }, function()
-		lack.setup({ global = true })
-		equal(lack, rawget(_G, "lack"))
-
-		local hijacker = {}
-		rawset(_G, "lack", hijacker)
-
-		expect_error("global lack is already defined", function()
-			lack.setup({ global = true })
-		end)
-
-		equal(hijacker, rawget(_G, "lack"))
-	end)
-end)
-
-test("rejects invalid global names", function()
-	for _, value in ipairs({ "", "not-valid", "local", 42 }) do
-		expect_error("global", function()
-			lack.setup({ global = value })
-		end)
-	end
-end)
-
-test("rejects occupied globals without changing existing setup", function()
-	with_globals({ "plug", "occupied" }, function()
-		lack.setup({
-			repository = "https://gitlab.com/",
-			global = "plug",
-		})
-		rawset(_G, "occupied", false)
-
-		expect_error("global occupied is already defined", function()
-			lack.setup({
-				repository = "https://code.example/",
-				global = "occupied",
-			})
-		end)
-
-		equal(lack, rawget(_G, "plug"))
-		equal(false, rawget(_G, "occupied"))
-
-		local packages
-		vim.pack.add = function(resolved)
-			packages = resolved
-			return "global-result"
-		end
-
-		local result = rawget(_G, "plug")({ "owner/plugin" })
-
-		equal("global-result", result)
-		equal({ { src = "https://gitlab.com/owner/plugin" } }, packages)
-	end)
+	local call = invoke({ "owner/plugin" })
+	equal({ { src = "https://gitlab.com/owner/plugin" } }, call.packages)
 end)
 
 local failures = {}
