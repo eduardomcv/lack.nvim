@@ -1,6 +1,5 @@
 ---@class lack.SetupOpts
 ---@field repository? string
----@field global? boolean|string
 
 ---@class lack.PluginSpec
 ---@field [1]? string
@@ -28,61 +27,10 @@ local M = {}
 
 local default_repository = "https://github.com/"
 local repository = default_repository
----@type string?
-local registered_global = nil
-
----@type table<string, boolean>
-local lua_keywords = {
-	["and"] = true,
-	["break"] = true,
-	["do"] = true,
-	["else"] = true,
-	["elseif"] = true,
-	["end"] = true,
-	["false"] = true,
-	["for"] = true,
-	["function"] = true,
-	["goto"] = true,
-	["if"] = true,
-	["in"] = true,
-	["local"] = true,
-	["nil"] = true,
-	["not"] = true,
-	["or"] = true,
-	["repeat"] = true,
-	["return"] = true,
-	["then"] = true,
-	["true"] = true,
-	["until"] = true,
-	["while"] = true,
-}
 
 ---@param message string
 local function fail(message)
 	error("lack: " .. message, 0)
-end
-
----@param value? boolean|string
----@return string?
-local function resolve_global(value)
-	if value == nil or value == false then
-		return nil
-	end
-
-	if value == true then
-		return "lack"
-	end
-
-	if type(value) ~= "string" then
-		fail("global must be a boolean, string, or nil")
-	end
-	---@cast value string
-
-	if not value:match("^[A-Za-z_][A-Za-z0-9_]*$") or lua_keywords[value] then
-		fail("global must be a valid Lua identifier")
-	end
-
-	return value
 end
 
 ---@param source string
@@ -460,26 +408,6 @@ function M.setup(opts)
 		fail("repository must be a non-empty string")
 	end
 
-	local global = resolve_global(opts.global)
-	local existing = nil
-
-	if global ~= nil then
-		existing = rawget(_G, global)
-	end
-
-	if existing ~= nil and existing ~= M then
-		fail(("global %s is already defined"):format(global))
-	end
-
-	if registered_global ~= nil and rawget(_G, registered_global) == M then
-		rawset(_G, registered_global, nil)
-	end
-
-	if global ~= nil then
-		rawset(_G, global, M)
-	end
-
-	registered_global = global
 	repository = source .. "/"
 end
 
